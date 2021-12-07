@@ -56,6 +56,12 @@ fn matches(p: &QueryTreePy, source: &str) -> PyResult<Vec<QueryResultPy>> {
 }
 
 #[pyfunction]
+fn get_match_item(p: &QueryResultPy, source: &str) -> PyResult<Vec<String>> {
+    let r = p.qr.get_match_item(source, 0);
+    Ok(r)
+}
+
+#[pyfunction]
 fn display(p: &QueryResultPy, source: &str) -> PyResult<String> {
     let r = p.qr.display(source, 10, 10);
     println!("{}", r.as_bytes().len());
@@ -69,6 +75,7 @@ fn weggli(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(identifiers, m)?)?;
     m.add_function(wrap_pyfunction!(matches, m)?)?;
     m.add_function(wrap_pyfunction!(display, m)?)?;
+    m.add_function(wrap_pyfunction!(get_match_item, m)?)?;
 
     Ok(())
 }

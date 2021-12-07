@@ -61,6 +61,31 @@ impl<'a, 'b> QueryResult {
     pub fn start_offset(&self) -> usize {
         self.function.start
     }
+    /// return match item, use idx 
+    pub fn get_match_item(&self, source: &'b str, idx: usize) -> Vec<String> {
+        // let mut result = String::new();
+        let mut sorted = self.captures.clone();
+        sorted.sort_by(|a, b| a.range.start.cmp(&b.range.start));
+        
+        let mut clean_ranges: Vec<std::ops::Range<usize>> = Vec::with_capacity(self.captures.len());
+        for r in sorted.into_iter().skip(1).map(|c| c.range) {
+            if !clean_ranges.is_empty() && clean_ranges.last().unwrap().contains(&r.start) {
+                continue;
+            }
+            clean_ranges.push(r.clone());
+        }
+        
+        // Iterate over all remaining nodes and print them
+        let mut result: Vec<String> = Vec::new();
+        for (index, r) in clean_ranges.iter().enumerate() {
+            // Mark the node itself in red.
+            if index == idx{
+                let tmp: String = String::from(&source[r.start..r.end]);
+                result.push(tmp);
+            }
+        }
+        result
+    }
 
     /// Returns a colored String representation of the result with `before` + `after`
     /// context lines around each captured node.
