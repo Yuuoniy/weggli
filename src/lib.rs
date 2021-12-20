@@ -15,6 +15,7 @@ limitations under the License.
 */
 
 use tree_sitter::{Language, Parser, Query, Tree};
+use tree_sitter::{Node, TreeCursor};
 
 #[macro_use]
 extern crate log;
@@ -51,6 +52,35 @@ pub fn parse(source: &str, cpp: bool) -> Tree {
 
     parser.parse(source, None).unwrap()
 }
+
+
+pub fn find_node_by_type<'a>(node:tree_sitter::Node<'a>,kind:&'a str)->Node<'a> {
+    let mut cursor = node.walk();
+    loop {
+        if cursor.node().kind() == kind {
+            let node = cursor.node();
+            break node;
+        }
+        if  !cursor.goto_first_child(){
+            while !cursor.goto_next_sibling(){
+                if !cursor.goto_parent(){
+                    break;
+                }
+            }
+        }
+    }
+}
+
+
+pub fn find_node_by_field_and_get_content(node:tree_sitter::Node,name:& str,code:&str)->String {
+    let cursor = node.walk();
+    let mut result = String::new();
+    if let Some(child)=  cursor.node().child_by_field_name(name){
+        result+=&code[child.start_byte()..child.end_byte()];
+    }
+    result
+}
+
 
 // Internal helper function to create a new tree-sitter query.
 fn ts_query(sexpr: &str, cpp: bool) -> tree_sitter::Query {

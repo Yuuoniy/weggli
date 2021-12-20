@@ -17,6 +17,12 @@ limitations under the License.
 use colored::Colorize;
 use std::cmp;
 use rustc_hash::FxHashMap;
+use crate::parse;
+use crate::find_node_by_type;
+use crate::find_node_by_field_and_get_content;
+use std::io::prelude::*;
+use std::fs::File;
+use std::fs::OpenOptions;
 
 
 /// Struct for storing (partial) query matches.
@@ -57,10 +63,19 @@ impl<'a, 'b> QueryResult {
             function,
         }
     }
+    pub fn get_function(self) -> std::ops::Range<usize> {
+        self.function
+    }
 
     pub fn start_offset(&self) -> usize {
         self.function.start
     }
+
+    pub fn end_offset(&self) -> usize {
+        self.function.end
+    }
+
+
     /// return match item, use idx 
     pub fn get_match_item(&self, source: &'b str, idx: usize) -> Vec<String> {
         // let mut result = String::new();
@@ -119,6 +134,14 @@ impl<'a, 'b> QueryResult {
             clean_ranges.push(r.clone());
         }
 
+        let code = &source[self.function.start..self.function.end];
+        let tree = parse(code, false);
+        let root = tree.root_node();
+        let node = find_node_by_type(root,"function_declarator");
+        let mut funcname = find_node_by_field_and_get_content(node,"declarator",code);
+        let mut file = OpenOptions::new().append(true).open("wrapper-func.txt").expect("cannot open file");
+        funcname.push('\n');
+        file.write((funcname).as_bytes()).expect("write failed");
         // Iterate over all remaining nodes and print them
         for (index, r) in clean_ranges.iter().enumerate() {
             if r.start <= offset {
@@ -134,6 +157,8 @@ impl<'a, 'b> QueryResult {
                 end = cmp::min(end, clean_ranges[index + 1].start - 1);
             }
 
+            
+            // println!("println function {}",&source[self.function.start..self.function.end]);
             // Never go beyond the function boundary.
             end = cmp::min(end, self.function.end);
 
