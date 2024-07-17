@@ -30,7 +30,7 @@ pub struct QueryResult {
     pub vars: FxHashMap<String, usize>,
     // Range of the outermost node. This is badly named as it does not have to be a
     // function definition, but for final query results it normally is.
-    function: std::ops::Range<usize>,
+    pub function: std::ops::Range<usize>,
 }
 
 /// Stores the result (== source range) for a single capture.

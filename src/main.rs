@@ -25,6 +25,7 @@ use colored::Colorize;
 use rayon::iter::ParallelBridge;
 use rayon::prelude::*;
 use regex::Regex;
+use serde_json::{json, Value as JsonValue};
 use std::cell::RefCell;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc};
@@ -178,6 +179,7 @@ fn main() {
         let before = args.before;
         let after = args.after;
         let enable_line_numbers = args.enable_line_numbers;
+        let save_path = args.save.clone();
 
         // Spawn worker to iterate through files, parse potential matches and forward ASTs
         s.spawn(move |_| parse_files_worker(files, ast_tx, w, cpp));
@@ -188,8 +190,17 @@ fn main() {
         // query runs we forward them to our next worker function
         s.spawn(move |_| execute_queries_worker(ast_rx, results_tx, w, &args));
 
-        if w.len() > 1 {
-            s.spawn(move |_| multi_query_worker(results_rx, w.len(), before, after, enable_line_numbers));
+        if w.len() > 1 || save_path.is_some() {
+            s.spawn(move |_| {
+                multi_query_worker(
+                    results_rx,
+                    w.len(),
+                    before,
+                    after,
+                    enable_line_numbers,
+                    save_path.unwrap(),
+                )
+            });
         }
     });
 }
@@ -334,6 +345,7 @@ fn execute_queries_worker(
     work: &[WorkItem],
     args: &cli::Args,
 ) {
+    let save = args.save.is_some();
     receiver.into_iter().par_bridge().for_each_with(
         results_tx,
         |results_tx, (source, tree, path)| {
@@ -375,13 +387,18 @@ fn execute_queries_worker(
                     // Print match or forward it if we are in a multi query context
                     let process_match = |m: QueryResult| {
                         // single query
-                        if work.len() == 1 {
+                        if work.len() == 1 && !save {
                             let line = source[..m.start_offset()].matches('\n').count() + 1;
                             println!(
                                 "{}:{}\n{}",
                                 path.clone().bold(),
                                 line,
-                                m.display(&source, args.before, args.after, args.enable_line_numbers)
+                                m.display(
+                                    &source,
+                                    args.before,
+                                    args.after,
+                                    args.enable_line_numbers
+                                )
                             );
                         } else {
                             results_tx
@@ -412,7 +429,8 @@ fn multi_query_worker(
     num_queries: usize,
     before: usize,
     after: usize,
-    enable_line_numbers: bool
+    enable_line_numbers: bool,
+    save_path: String,
 ) {
     let mut query_results = Vec::with_capacity(num_queries);
     for _ in 0..num_queries {
@@ -446,17 +464,82 @@ fn multi_query_worker(
     }
 
     // Print remaining results
-    query_results.into_iter().for_each(|rv| {
+    query_results.iter().for_each(|rv| {
         rv.into_iter().for_each(|r| {
             let line = r.source[..r.result.start_offset()].matches('\n').count() + 1;
             println!(
                 "{}:{}\n{}",
                 r.path.bold(),
                 line,
-                r.result.display(&r.source, before, after, enable_line_numbers)
+                r.result
+                    .display(&r.source, before, after, enable_line_numbers)
             );
         })
     });
+
+    let json_result = query_results.into_iter().map(|rv| {
+        let mut p2rv: HashMap<String, Vec<ResultsCtx>> = HashMap::new();
+        rv.into_iter().for_each(|r| {
+            if !p2rv.contains_key(&r.path) {
+                p2rv.insert(r.path.clone(), Vec::new());
+            }
+            p2rv.get_mut(&r.path).unwrap().push(r);
+        });
+
+        p2rv.into_iter().map(|(path, rv)| {
+            json!({
+                "path": path,
+                "matches": rv.into_iter().map(|r| get_json_match_result(&r.source, &r.result)).collect::<Vec<JsonValue>>()
+            })
+        }).collect::<Vec<JsonValue>>()
+    }).collect::<JsonValue>();
+
+    write_json_results(&save_path, json_result);
+}
+
+fn write_json_results(save_path: &str, json_results: JsonValue) {
+    let _ = fs::File::create(Path::new(save_path))
+        .expect("Could not create file")
+        .write(format!("{:#}", json_results).as_bytes())
+        .expect("Could not write to file");
+}
+
+fn get_json_match_result(source: &str, m: &QueryResult) -> JsonValue {
+    let mut lines = Vec::new();
+    let mut offset = 0;
+    for l in source.split('\n') {
+        lines.push((offset, l, 0));
+        offset += l.len() + 1;
+    }
+
+    let function = &source[m.function.start..m.function.end];
+    let vars: Vec<JsonValue> = m
+        .vars
+        .iter()
+        .map(|(k, i)| {
+            let captured_s = m.value(k, source).unwrap();
+            let capture = &m.captures[*i];
+            let offset = lines
+                .iter()
+                .enumerate()
+                .find(|(_, (offset, l, _))| {
+                    capture.range.start >= *offset && capture.range.start < *offset + l.len()
+                })
+                .unwrap();
+            let line_nr = offset.0 + 1;
+            let line_off = capture.range.start - offset.1 .0 + 1;
+            json!({
+                "loc": format!("{}:{}", line_nr, line_off),
+                "var": k,
+                "val": captured_s
+            })
+        })
+        .collect();
+
+    json!({
+        "vars": vars,
+        "function": function,
+    })
 }
 
 // Exit on SIGPIPE

@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "*.DecDiff": "diff",
+        "*.ttml": "xml",
+        "*.ttss": "css"
+    },
+    "json.maxItemsComputed": 50000
+}

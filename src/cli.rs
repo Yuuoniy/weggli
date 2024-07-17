@@ -33,6 +33,7 @@ pub struct Args {
     pub include: Vec<String>,
     pub exclude: Vec<String>,
     pub enable_line_numbers: bool,
+    pub save: Option<String>,
 }
 
 /// Parse command arguments and return them inside the Args structure.
@@ -166,6 +167,13 @@ pub fn parse_arguments() -> Args {
                 .takes_value(false)
                 .help("Enable line numbers"),
         )
+        .arg(
+            Arg::with_name("save")
+                .long("save")
+                .short("s")
+                .takes_value(true)
+                .help("Save the query to a file."),
+        )
         .get_matches();
 
     let helper = |option_name| -> Vec<String> {
@@ -242,6 +250,8 @@ pub fn parse_arguments() -> Args {
 
     let enable_line_numbers = matches.occurrences_of("line-numbers") > 0;
 
+    let save = matches.value_of("save").map(|f| f.to_string());
+
     Args {
         path,
         pattern,
@@ -257,6 +267,7 @@ pub fn parse_arguments() -> Args {
         include,
         exclude,
         enable_line_numbers,
+        save,
     }
 }
 
